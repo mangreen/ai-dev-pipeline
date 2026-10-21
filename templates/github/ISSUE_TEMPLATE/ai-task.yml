@@ -1,0 +1,51 @@
+name: AI 開發任務
+description: 提出一個可交給 AI 規劃與實作的任務（說明越具體，AI 越少需要追問）
+title: "[AI] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        建立後請 **指派負責人（Assignee）**。AI 完成每個階段時會 mention 這個人。
+        要啟動規劃，請貼上標籤 `ai:plan`。計畫核准後貼 `plan-approved`。
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景與動機
+      description: 為什麼需要這件事？誰會受益？
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目標
+      description: 完成後系統應該有什麼不同？用行為描述，不要寫實作方式。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 驗收條件
+      description: 每一條都必須可以被測試。
+      placeholder: |
+        - [ ] 當 …… 時，系統應該 ……
+        - [ ] 當 …… 時，系統應該回傳錯誤 ……
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 不在範圍內
+      description: 明確排除的事，避免 AI 順手改太多。
+  - type: textarea
+    id: constraints
+    attributes:
+      label: 限制與相關資訊
+      description: 相容性、效能、安全、相關檔案或連結。不要貼任何密碼或金鑰。
+  - type: checkboxes
+    id: risk
+    attributes:
+      label: 風險確認
+      options:
+        - label: 這個任務不涉及資料庫 migration、金流或權限變更（若涉及，請在限制欄註明並由人類主導）
+          required: false

@@ -1,0 +1,9 @@
+# FIXME: Replace the placeholders with real people or teams, then uncomment.
+# Together with the branch rule "Require review from Code Owners" this guarantees that a human
+# who owns the area must approve changes to the pipeline itself.
+#
+# /.github/        @your-org/platform-team
+# /.claude/        @your-org/platform-team
+# /CLAUDE.md       @your-org/platform-team
+# /tools/          @your-org/platform-team
+# /docs/adr/       @your-org/architects

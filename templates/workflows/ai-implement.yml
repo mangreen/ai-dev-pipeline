@@ -1,0 +1,89 @@
+name: AI Implement
+
+# Stage 2 - implement the approved plan with TDD, open a PR.
+# Trigger : a human adds the label `plan-approved` (human gate 1).
+# Output  : a pull request containing `Closes #<issue>`. The agent can neither merge nor approve.
+#
+# Project-specific settings are repository VARIABLES (Settings > Secrets and variables > Actions):
+#   AI_SETUP_CMD    command that installs dependencies, e.g. `npm ci` (optional)
+#   AI_TEST_TOOLS   comma separated tool allowlist for tests/lint,
+#                   e.g. `Bash(npm test:*),Bash(npm run lint:*)` (default shown below)
+#   AI_MODEL_IMPLEMENT  model id (default below)
+
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: ai-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  implement:
+    if: github.event.label.name == 'plan-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Project setup
+        if: vars.AI_SETUP_CMD != ''
+        env:
+          SETUP_CMD: ${{ vars.AI_SETUP_CMD }}
+        run: bash -euo pipefail -c "$SETUP_CMD"
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read tools/prompts/implement.md and follow it exactly.
+            Target: issue #${{ github.event.issue.number }}.
+          claude_args: |
+            --model ${{ vars.AI_MODEL_IMPLEMENT || 'claude-sonnet-5-5' }}
+            --max-turns 60
+            --allowedTools "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git checkout:*),Bash(git switch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*),${{ vars.AI_TEST_TOOLS || 'Bash(npm test:*),Bash(npm run lint:*)' }}"
+
+  notify:
+    needs: implement
+    if: always() && github.event.label.name == 'plan-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Notify only when something went wrong
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number }}
+          IMPL_RESULT: ${{ needs.implement.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          info=$(gh issue view "$N" --json title,assignees,author)
+          title=$(jq -r .title <<<"$info")
+          OWNERS=$(jq -r '(if (.assignees|length)>0 then [.assignees[].login] else [.author.login] end) | join(" ")' <<<"$info")
+          export OWNERS
+          pr=$(gh pr list --state open --search "Closes #$N in:body" --json url --jq '.[0].url // empty')
+          export URL="$RUN_URL"
+          if [ "$IMPL_RESULT" != "success" ]; then
+            export TITLE="AI 實作失敗：#$N $title"
+            export TEXT="請查看 Actions 記錄，可調整計畫後重新貼 plan-approved，或手動接手。"
+          elif [ -z "$pr" ]; then
+            export TITLE="AI 實作結束但沒有開 PR：#$N $title"
+            export TEXT="請查看 Actions 記錄與 issue 留言。"
+          else
+            exit 0   # A successful PR is announced by ai-review.yml.
+          fi
+          bash tools/scripts/notify.sh

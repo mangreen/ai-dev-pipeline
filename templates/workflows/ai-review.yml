@@ -1,0 +1,86 @@
+name: AI Review
+
+# Stage 3 - AI code review of every pull request, then a notification for AI-authored PRs.
+# Human gate 2 (merge) is enforced by branch protection / rulesets, not by this workflow.
+# The agent can comment but cannot approve or merge.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read tools/prompts/review.md and follow it exactly.
+            Target: pull request #${{ github.event.pull_request.number }}.
+          claude_args: |
+            --model ${{ vars.AI_MODEL_REVIEW || 'claude-opus-5-5' }}
+            --max-turns 25
+            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh issue view:*),mcp__github_inline_comment__create_inline_comment"
+
+  notify:
+    needs: review
+    if: >-
+      always() &&
+      github.event.pull_request.draft == false &&
+      github.event.action != 'synchronize' &&
+      github.event.pull_request.user.type == 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      # SECURITY: take the notification script from the base branch. A PR must not be able
+      # to change the code that runs next to the webhook secrets.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+      - name: Notify the owner of the linked issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          pr=$(gh pr view "$PR" --json title,url,body)
+          title=$(jq -r .title <<<"$pr")
+          URL=$(jq -r .url <<<"$pr")
+          export URL
+          issue=$(jq -r .body <<<"$pr" | grep -oiE '(closes|fixes|resolves) #[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
+          export OWNERS=""
+          if [ -n "$issue" ]; then
+            OWNERS=$(gh issue view "$issue" --json assignees,author --jq '(if (.assignees|length)>0 then [.assignees[].login] else [.author.login] end) | join(" ")')
+            export OWNERS
+          fi
+          if [ "$REVIEW_RESULT" = "success" ]; then
+            export TITLE="AI 的 PR 待人工審查與合併：#$PR $title"
+            export TEXT="AI 審查已完成，請你做最後判斷。"
+          else
+            export TITLE="AI 的 PR 待人工處理（AI 審查失敗）：#$PR $title"
+            export TEXT="AI 審查沒有成功，請人工審查。"
+          fi
+          bash tools/scripts/notify.sh

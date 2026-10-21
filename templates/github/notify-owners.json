@@ -1,0 +1,14 @@
+{
+  "_comment": "FIXME: Replace every placeholder below. Keys under users are GitHub logins. slack = Slack member ID (profile > Copy member ID). email = Microsoft 365 sign-in address used for Teams mentions.",
+  "users": {
+    "your-github-login-here": {
+      "name": "Your Name",
+      "slack": "changeme-slack-member-id",
+      "email": "changeme@your-company.example"
+    }
+  },
+  "groups": {
+    "default": ["your-github-login-here"],
+    "deploy": ["your-github-login-here"]
+  }
+}

@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Keeps the pinned versions of GitHub Actions (checkout, claude-code-action, ...) current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

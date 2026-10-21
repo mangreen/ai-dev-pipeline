@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Fake `gh` CLI for workflow-step tests. Issue #7 and PR #9 are the fixtures.
+# FAKE_LABEL     second label on the issue (default needs:plan-approval)
+# FAKE_ASSIGNEES JSON array of logins (default ["bob-gh"])
+# FAKE_PR        non-empty => `gh pr list` returns a PR URL
+args="$*"
+[ -n "${FAKE_GH_LOG:-}" ] && echo "$args" >> "$FAKE_GH_LOG"
+assignees="${FAKE_ASSIGNEES:-[\"bob-gh\"]}"
+case "$args" in
+  "issue view 7 --json title,url,labels,assignees,author")
+    jq -n --arg l "${FAKE_LABEL:-needs:plan-approval}" --argjson a "$assignees" \
+      '{title:"Convert temperature",url:"https://github.com/o/r/issues/7",
+        labels:[{name:"ai:plan"},{name:$l}],
+        assignees:($a|map({login:.})),author:{login:"alice-gh"}}';;
+  "issue view 7 --json title,assignees,author")
+    jq -n --argjson a "$assignees" '{title:"Convert temperature",assignees:($a|map({login:.})),author:{login:"carol-gh"}}';;
+  "issue view 7 --json assignees,author --jq "*)
+    echo "carol-gh";;
+  "pr list "*)
+    [ -n "${FAKE_PR:-}" ] && echo "https://github.com/o/r/pull/9"; exit 0;;
+  "pr view 9 --json title,url,body")
+    printf '%s\n' '{"title":"feat: convert temperature","url":"https://github.com/o/r/pull/9","body":"Summary\n\nCloses #7"}';;
+  "label create "*) exit 0;;
+  *) echo "FAKE-GH UNHANDLED: $args" >&2; exit 1;;
+esac

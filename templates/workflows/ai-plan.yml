@@ -1,0 +1,88 @@
+name: AI Plan
+
+# Stage 1 - clarify, research, design. Read-only agent.
+# Trigger : a human adds the label `ai:plan` to an issue.
+# Output  : an issue comment ("## AI Plan" or "## AI 需求釐清") and a state label.
+# Human gate 1: a human reviews the plan and adds `plan-approved` (see ai-implement.yml).
+#
+# NOTE: labels added with GITHUB_TOKEN do not trigger other workflows (GitHub behaviour),
+# so only a human action can move an issue to the next stage. This is intentional.
+
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: ai-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  plan:
+    if: github.event.label.name == 'ai:plan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Only the issue number is passed in. Issue text is untrusted and is read by the
+          # agent through `gh`, never expanded into this prompt.
+          prompt: |
+            Read tools/prompts/plan.md and follow it exactly.
+            Target: issue #${{ github.event.issue.number }}.
+          claude_args: |
+            --model ${{ vars.AI_MODEL_PLAN || 'claude-opus-5-5' }}
+            --max-turns 30
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
+
+  notify:
+    needs: plan
+    if: always() && github.event.label.name == 'ai:plan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Notify the issue owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.issue.number }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          info=$(gh issue view "$N" --json title,url,labels,assignees,author)
+          labels=$(jq -r '.labels[].name' <<<"$info")
+          title=$(jq -r .title <<<"$info")
+          OWNERS=$(jq -r '(if (.assignees|length)>0 then [.assignees[].login] else [.author.login] end) | join(" ")' <<<"$info")
+          export OWNERS
+          URL=$(jq -r .url <<<"$info")
+          export URL
+          if [ "$PLAN_RESULT" != "success" ]; then
+            export TITLE="AI 計畫階段失敗：#$N $title"
+            export TEXT="請查看 Actions 記錄後決定重跑或手動處理。"
+            export URL="$RUN_URL"
+          elif grep -qx 'needs:clarification' <<<"$labels"; then
+            export TITLE="AI 需要你釐清需求：#$N $title"
+            export TEXT="請在 issue 回覆 AI 的問題，回覆後重新貼上 ai:plan 標籤。"
+          elif grep -qx 'needs:plan-approval' <<<"$labels"; then
+            export TITLE="AI 計畫待審核：#$N $title"
+            export TEXT="請審閱計畫。同意請貼上 plan-approved 標籤；要調整請直接留言。"
+          else
+            export TITLE="AI 計畫階段結束但未標記狀態：#$N $title"
+            export TEXT="請到 issue 確認 AI 的輸出。"
+          fi
+          bash tools/scripts/notify.sh

@@ -1,0 +1,76 @@
+name: Deploy
+
+# Stage 4 - deployment is deterministic CI/CD. No AI agent runs here.
+# Human gate 3: the `production` environment must have "Required reviewers"
+# (Settings > Environments > production).
+#
+# The workflow is inert until the repository variable DEPLOY_ENABLED is set to `true`,
+# so installing the pipeline never triggers a surprise deployment.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  staging:
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      # TODO(setup): replace with your real staging deployment command.
+      - run: echo "deploy to staging (placeholder - replace me)"
+
+  production:
+    needs: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      # TODO(setup): replace with your real production deployment command.
+      - run: echo "deploy to production (placeholder - replace me)"
+
+  notify-approval:
+    needs: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Ask the deploy approvers for a decision
+        env:
+          OWNERS: group:deploy
+          TITLE: "staging 已部署，正式環境等待核准"
+          TEXT: "請到連結的 workflow 頁面按 Review deployments 核准或拒絕。"
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: bash tools/scripts/notify.sh
+
+  notify-failure:
+    needs: [staging, production]
+    if: ${{ failure() && vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tell the deploy group the deployment failed
+        env:
+          OWNERS: group:deploy
+          TITLE: "部署失敗或被拒絕"
+          TEXT: "請查看 workflow 記錄。"
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: bash tools/scripts/notify.sh
