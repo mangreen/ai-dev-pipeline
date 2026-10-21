@@ -1,0 +1,11 @@
+# Secrets: never commit. Only .env.example is tracked.
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Tooling and OS noise
+node_modules/
+*.log
+.DS_Store
+/tmp/

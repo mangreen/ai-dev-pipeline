@@ -1,0 +1,11 @@
+extends: default
+rules:
+  line-length: disable        # workflow prompts and shell one-liners are long by nature
+  document-start: disable
+  truthy:
+    check-keys: false         # `on:` is a key in GitHub workflows
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
