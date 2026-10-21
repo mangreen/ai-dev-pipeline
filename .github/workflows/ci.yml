@@ -47,7 +47,7 @@ jobs:
         run: bash tools/scripts/scan-secrets.sh --base "origin/$BASE_REF"
       # Second line of defence: scans the full history. Organisation-owned repositories need a
       # Gitleaks licence key in the GITLEAKS_LICENSE secret (see README, "Troubleshooting").
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
